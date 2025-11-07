@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Vardiya Yönetim Sistemi</title>
+    <style>
+      :root {
+        --bg: #0f172a;
+        --panel: #111827;
+        --muted: #94a3b8;
+        --accent: #7c3aed;
+        --accent-2: #06b6d4;
+        --ok: #22c55e;
+        --warn: #f59e0b;
+        --err: #ef4444;
+        --text: #e5e7eb;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica Neue, Arial;
+        background: radial-gradient(1200px 800px at 10% 10%, #1e293b 0%, var(--bg) 50%),
+                    radial-gradient(900px 600px at 90% 20%, #0b1020 0%, var(--bg) 60%);
+        color: var(--text);
+      }
+      header {
+        padding: 32px 20px; text-align: center; position: sticky; top: 0; z-index: 5;
+        background: linear-gradient(180deg, rgba(15,23,42,0.9) 0, rgba(15,23,42,0.7) 100%);
+        backdrop-filter: blur(6px);
+        border-bottom: 1px solid rgba(124,58,237,0.2);
+      }
+      h1 { margin: 0; font-size: 28px; letter-spacing: 0.3px; }
+      .container { max-width: 1100px; margin: 24px auto; padding: 0 16px 64px; }
+      .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+      .card {
+        background: linear-gradient(180deg, rgba(17,24,39,1) 0%, rgba(17,24,39,0.9) 100%);
+        border: 1px solid rgba(148,163,184,0.15);
+        border-radius: 14px; padding: 16px; box-shadow: 0 8px 28px rgba(2,8,23,0.6);
+      }
+      .card h2 { margin: 0 0 10px; font-size: 18px; color: #fafafa; }
+      .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+      label { font-size: 12px; color: var(--muted); }
+      input, select {
+        width: 100%; padding: 10px 12px; color: var(--text); background: #0b1220;
+        border: 1px solid rgba(148,163,184,0.18); border-radius: 10px; outline: none;
+      }
+      input:focus, select:focus { border-color: var(--accent-2); box-shadow: 0 0 0 3px rgba(6,182,212,0.15); }
+      button {
+        padding: 10px 14px; border-radius: 10px; border: 1px solid transparent; cursor: pointer;
+        background: linear-gradient(90deg, var(--accent) 0%, var(--accent-2) 100%);
+        color: white; font-weight: 600; letter-spacing: .2px;
+      }
+      button:disabled { filter: grayscale(0.8) brightness(0.7); cursor: not-allowed; }
+      ul { margin: 10px 0 0; padding: 0; list-style: none; }
+      li { padding: 8px 10px; border: 1px solid rgba(148,163,184,0.15); border-radius: 10px; margin-top: 6px; background: #0b1220; }
+      .tag { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; background: rgba(124,58,237,0.15); border: 1px solid rgba(124,58,237,0.35); }
+      .status { font-size: 12px; color: var(--muted); margin-left: 8px; }
+      .sep { height: 1px; background: rgba(148,163,184,0.15); margin: 12px -16px; }
+      .muted { color: var(--muted); font-size: 13px; }
+      .ok { color: var(--ok) }
+      .err { color: var(--err) }
+      .warn { color: var(--warn) }
+      .mini { font-size: 12px; opacity: 0.9 }
+    </style>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  </head>
+  <body>
+    <header>
+      <h1>Vardiya Yönetim Sistemi</h1>
+    </header>
+    <div id="root" class="container"></div>
+    <script>
+      (function() {
+        const { useEffect, useMemo, useState } = React;
+
+        const API = {
+          base: '',
+          auth: '/api/v1/auth/login',
+          departments: '/api/v1/departments',
+          employees: '/api/v1/employees',
+          shiftTemplates: '/api/v1/shift_templates',
+          shifts: '/api/v1/shifts',
+          shiftAssignments: (shiftId) => '/api/v1/shifts/' + shiftId + '/shift_assignments'
+        };
+
+        const getToken = () => localStorage.getItem('authToken');
+        const setToken = (t) => localStorage.setItem('authToken', t);
+
+        async function apiFetch(path, { method='GET', body, token } = {}) {
+          const headers = { 'Content-Type': 'application/json' };
+          const t = token || getToken();
+          if (t) headers['Authorization'] = 'Bearer ' + t;
+          const res = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : undefined });
+          if (!res.ok) {
+            let errText = await res.text().catch(()=> '');
+            throw new Error('HTTP ' + res.status + ' ' + errText);
+          }
+          if (res.status === 204) return null;
+          return res.json();
+        }
+
+        function useLoadLists(enabled) {
+          const [departments, setDepartments] = useState([]);
+          const [employees, setEmployees] = useState([]);
+          const [templates, setTemplates] = useState([]);
+          const [loading, setLoading] = useState(false);
+          const [error, setError] = useState(null);
+
+          const reload = async () => {
+            if (!enabled) return;
+            setLoading(true); setError(null);
+            try {
+              const [deps, emps, temps] = await Promise.all([
+                apiFetch(API.departments),
+                apiFetch(API.employees),
+                apiFetch(API.shiftTemplates)
+              ]);
+              setDepartments(deps);
+              setEmployees(emps);
+              setTemplates(temps);
+            } catch (e) { setError(e.message); }
+            finally { setLoading(false); }
+          };
+
+          useEffect(()=>{ reload(); }, [enabled]);
+          return { departments, employees, templates, loading, error, reload };
+        }
+
+        function Section({ title, children }) {
+          return React.createElement('section', { className: 'card' },
+            React.createElement('h2', null, title),
+            children
+          );
+        }
+
+        function App() {
+          const [token, setTokenState] = useState(getToken());
+          const [status, setStatus] = useState('');
+          const authed = !!token;
+          const { departments, employees, templates, loading, error, reload } = useLoadLists(authed);
+
+          // Login form state
+          const [email, setEmail] = useState('admin@example.com');
+          const [password, setPassword] = useState('123456');
+
+          const [currentUser, setCurrentUser] = useState(null);
+
+          const onLogin = async (e) => {
+            e.preventDefault();
+            setStatus('Giriş yapılıyor...');
+            try {
+              const data = await apiFetch(API.auth, { method: 'POST', body: { email, password }, token: null });
+              setToken(data.token);
+              setTokenState(data.token);
+              setCurrentUser(data.user || null);
+              setStatus('Giriş başarılı');
+              reload();
+            } catch (e) {
+              setStatus('Hata: ' + e.message);
+            }
+          };
+
+          // Department
+          const [depName, setDepName] = useState('');
+          const createDepartment = async () => {
+            if (!depName.trim()) return;
+            setStatus('Departman oluşturuluyor...');
+            try {
+              await apiFetch(API.departments, { method: 'POST', body: { department: { name: depName.trim() } } });
+              setDepName('');
+              await reload();
+              setStatus('Departman eklendi');
+            } catch (e) { setStatus('Hata: ' + e.message); }
+          };
+
+          // Employee
+          const [empName, setEmpName] = useState('');
+          const [empDepId, setEmpDepId] = useState('');
+          const createEmployee = async () => {
+            if (!empName.trim() || !empDepId) return;
+            setStatus('Çalışan oluşturuluyor...');
+            try {
+              const payload = { employee: { full_name: empName.trim(), department_id: Number(empDepId) } };
+              if (currentUser && currentUser.id) payload.employee.user_id = Number(currentUser.id);
+              await apiFetch(API.employees, { method: 'POST', body: payload });
+              setEmpName('');
+              await reload();
+              setStatus('Çalışan eklendi');
+            } catch (e) { setStatus('Hata: ' + e.message); }
+          };
+
+          // Shift template
+          const [stName, setStName] = useState('');
+          const [stStart, setStStart] = useState('08:00');
+          const [stEnd, setStEnd] = useState('16:00');
+          const createTemplate = async () => {
+            if (!stName.trim() || !stStart || !stEnd) return;
+            setStatus('Şablon oluşturuluyor...');
+            try {
+              await apiFetch(API.shiftTemplates, { method: 'POST', body: { shift_template: { name: stName.trim(), start_time: stStart, end_time: stEnd } } });
+              setStName('');
+              await reload();
+              setStatus('Şablon eklendi');
+            } catch (e) { setStatus('Hata: ' + e.message); }
+          };
+
+          // Assignment
+          const [assEmpId, setAssEmpId] = useState('');
+          const [assTemplateId, setAssTemplateId] = useState('');
+          const [assDate, setAssDate] = useState('');
+          const [assignments, setAssignments] = useState([]);
+
+          const ensureShiftAndAssign = async () => {
+            if (!assEmpId || !assTemplateId || !assDate) return;
+            const employee = employees.find(e => String(e.id) === String(assEmpId));
+            if (!employee) { setStatus('Hata: çalışan bulunamadı'); return; }
+            const departmentId = employee.department_id || (employee.department && employee.department.id);
+            if (!departmentId) { setStatus('Hata: çalışan departmanı yok'); return; }
+            setStatus('Vardiya atanıyor...');
+            try {
+              // Find existing shift for date+dept+template
+              const dayShifts = await apiFetch(API.shifts + '?date=' + encodeURIComponent(assDate));
+              let shift = dayShifts.find(s => String(s.department_id) === String(departmentId) && String(s.shift_template_id) === String(assTemplateId));
+              if (!shift) {
+                shift = await apiFetch(API.shifts, { method: 'POST', body: { shift: { work_date: assDate, department_id: Number(departmentId), shift_template_id: Number(assTemplateId) } } });
+              }
+              await apiFetch(API.shiftAssignments(shift.id), { method: 'POST', body: { shift_assignment: { employee_id: Number(assEmpId) } } });
+              // For display
+              const tmpl = templates.find(t => String(t.id) === String(assTemplateId));
+              setAssignments(prev => [{ id: Date.now(), date: assDate, employeeName: employee.full_name, templateName: tmpl ? tmpl.name : ('Şablon #' + assTemplateId) }, ...prev]);
+              setStatus('Atama eklendi');
+            } catch (e) { setStatus('Hata: ' + e.message); }
+          };
+
+          const logout = () => { localStorage.removeItem('authToken'); setTokenState(null); };
+
+          if (!authed) {
+            return React.createElement('div', { className: 'grid' },
+              React.createElement(Section, { title: 'Giriş' },
+                React.createElement('form', { onSubmit: onLogin, className: 'row', style: { alignItems: 'end' } },
+                  React.createElement('div', { style: { flex: 1, minWidth: '220px' } },
+                    React.createElement('label', null, 'E-posta'),
+                    React.createElement('input', { 'data-test': 'login-email', type: 'email', value: email, onChange: e => setEmail(e.target.value), placeholder: 'admin@example.com', required: true })
+                  ),
+                  React.createElement('div', { style: { flex: 1, minWidth: '180px' } },
+                    React.createElement('label', null, 'Şifre'),
+                    React.createElement('input', { 'data-test': 'login-password', type: 'password', value: password, onChange: e => setPassword(e.target.value), placeholder: '••••••', required: true })
+                  ),
+                  React.createElement('div', null,
+                    React.createElement('button', { 'data-test': 'login-submit', type: 'submit' }, 'Giriş Yap')
+                  ),
+                  React.createElement('div', { className: 'status mini muted' }, status)
+                )
+              )
+            );
+          }
+
+          return React.createElement('div', { className: 'grid' },
+            React.createElement(Section, { title: 'Oturum' },
+              React.createElement('div', { className: 'row' },
+                React.createElement('span', { className: 'tag' }, 'Token kaydedildi'),
+                React.createElement('span', { className: 'status ok' }, 'Giriş yapıldı'),
+                React.createElement('div', { style: { flex: 1 } }),
+                React.createElement('button', { onClick: logout }, 'Çıkış')
+              ),
+              React.createElement('div', { className: 'mini muted', style: { marginTop: 8 } }, status || (loading ? 'Yükleniyor...' : (error ? ('Hata: ' + error) : 'Hazır')))
+            ),
+
+            React.createElement(Section, { title: 'Departmanlar' },
+              React.createElement('div', { className: 'row' },
+                React.createElement('input', { 'data-test': 'department-name', type: 'text', placeholder: 'Departman adı', value: depName, onChange: e => setDepName(e.target.value) }),
+                React.createElement('button', { 'data-test': 'department-submit', onClick: createDepartment }, 'Ekle')
+              ),
+              React.createElement('ul', { 'data-test': 'department-list' },
+                departments.map(d => React.createElement('li', { key: d.id }, d.name))
+              )
+            ),
+
+            React.createElement(Section, { title: 'Çalışanlar' },
+              React.createElement('div', { className: 'row' },
+                React.createElement('select', { 'data-test': 'employee-department', value: empDepId, onChange: e => setEmpDepId(e.target.value) },
+                  React.createElement('option', { value: '' }, 'Departman seçin'),
+                  departments.map(d => React.createElement('option', { key: d.id, value: d.id }, d.name))
+                ),
+                React.createElement('input', { 'data-test': 'employee-name', type: 'text', placeholder: 'Ad Soyad', value: empName, onChange: e => setEmpName(e.target.value) }),
+                React.createElement('button', { 'data-test': 'employee-submit', onClick: createEmployee }, 'Ekle')
+              ),
+              React.createElement('ul', { 'data-test': 'employee-list' },
+                employees.map(e => React.createElement('li', { key: e.id }, e.full_name, ' ',
+                  React.createElement('span', { className: 'mini muted' }, e.department && e.department.name ? '(' + e.department.name + ')' : '')
+                ))
+              )
+            ),
+
+            React.createElement(Section, { title: 'Vardiya Şablonları' },
+              React.createElement('div', { className: 'row' },
+                React.createElement('input', { 'data-test': 'shift-template-name', type: 'text', placeholder: 'Şablon adı', value: stName, onChange: e => setStName(e.target.value) }),
+                React.createElement('input', { 'data-test': 'shift-template-start', type: 'time', value: stStart, onChange: e => setStStart(e.target.value) }),
+                React.createElement('input', { 'data-test': 'shift-template-end', type: 'time', value: stEnd, onChange: e => setStEnd(e.target.value) }),
+                React.createElement('button', { 'data-test': 'shift-template-submit', onClick: createTemplate }, 'Ekle')
+              ),
+              React.createElement('ul', { 'data-test': 'shift-template-list' },
+                templates.map(t => React.createElement('li', { key: t.id }, t.name, ' ',
+                  React.createElement('span', { className: 'mini muted' }, '(' + t.start_time + ' - ' + t.end_time + ')')
+                ))
+              )
+            ),
+
+            React.createElement(Section, { title: 'Vardiya Atamaları' },
+              React.createElement('div', { className: 'row' },
+                React.createElement('select', { 'data-test': 'assignment-employee', value: assEmpId, onChange: e => setAssEmpId(e.target.value) },
+                  React.createElement('option', { value: '' }, 'Çalışan seçin'),
+                  employees.map(e => React.createElement('option', { value: e.id, key: e.id }, e.full_name))
+                ),
+                React.createElement('select', { 'data-test': 'assignment-shift-template', value: assTemplateId, onChange: e => setAssTemplateId(e.target.value) },
+                  React.createElement('option', { value: '' }, 'Şablon seçin'),
+                  templates.map(t => React.createElement('option', { value: t.id, key: t.id }, t.name))
+                ),
+                React.createElement('input', { 'data-test': 'assignment-date', type: 'date', value: assDate, onChange: e => setAssDate(e.target.value) }),
+                React.createElement('button', { 'data-test': 'assignment-submit', onClick: ensureShiftAndAssign }, 'Ata')
+              ),
+              React.createElement('ul', { 'data-test': 'assignment-list' },
+                assignments.map(a => React.createElement('li', { key: a.id }, a.employeeName, ' - ', a.date, ' - ', a.templateName))
+              )
+            )
+          );
+        }
+
+        ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
+      })();
+    </script>
+  </body>
+  </html>

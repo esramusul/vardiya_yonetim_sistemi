@@ -1,0 +1,22 @@
+{
+  "name": "vardiye_api",
+  "version": "1.0.0",
+  "description": "This README would normally document whatever steps are necessary to get the application up and running.",
+  "main": "index.js",
+  "directories": {
+    "lib": "lib",
+    "test": "test"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@badeball/cypress-cucumber-preprocessor": "^23.2.1",
+    "@bahmutov/cypress-esbuild-preprocessor": "^2.2.7",
+    "cypress": "^15.6.0",
+    "esbuild": "^0.25.12"
+  }
+}

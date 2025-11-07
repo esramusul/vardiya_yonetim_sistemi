@@ -1,0 +1,11 @@
+# Read about fixtures at https://api.rubyonrails.org/classes/ActiveRecord/FixtureSet.html
+
+one:
+  work_date: 2025-11-07
+  department: one
+  shift_template: one
+
+two:
+  work_date: 2025-11-07
+  department: two
+  shift_template: two
